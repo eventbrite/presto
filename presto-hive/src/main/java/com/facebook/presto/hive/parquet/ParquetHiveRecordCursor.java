@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.hive.parquet;
 
+import com.facebook.presto.hive.FileFormatDataSourceStats;
 import com.facebook.presto.hive.HdfsEnvironment;
 import com.facebook.presto.hive.HiveColumnHandle;
 import com.facebook.presto.hive.parquet.predicate.ParquetPredicate;
@@ -21,7 +22,6 @@ import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.RecordCursor;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
-import com.facebook.presto.spi.block.BlockBuilderStatus;
 import com.facebook.presto.spi.predicate.TupleDomain;
 import com.facebook.presto.spi.type.DecimalType;
 import com.facebook.presto.spi.type.Decimals;
@@ -117,6 +117,8 @@ public class ParquetHiveRecordCursor
     private long completedBytes;
     private boolean closed;
 
+    private final FileFormatDataSourceStats stats;
+
     public ParquetHiveRecordCursor(
             HdfsEnvironment hdfsEnvironment,
             String sessionUser,
@@ -130,12 +132,14 @@ public class ParquetHiveRecordCursor
             boolean useParquetColumnNames,
             TypeManager typeManager,
             boolean predicatePushdownEnabled,
-            TupleDomain<HiveColumnHandle> effectivePredicate)
+            TupleDomain<HiveColumnHandle> effectivePredicate,
+            FileFormatDataSourceStats stats)
     {
         requireNonNull(path, "path is null");
         checkArgument(length >= 0, "length is negative");
         requireNonNull(splitSchema, "splitSchema is null");
         requireNonNull(columns, "columns is null");
+        this.stats = requireNonNull(stats, "stats is null");
 
         this.totalBytes = length;
 
@@ -324,7 +328,7 @@ public class ParquetHiveRecordCursor
         ParquetDataSource dataSource = null;
         try {
             FileSystem fileSystem = hdfsEnvironment.getFileSystem(sessionUser, path, configuration);
-            dataSource = buildHdfsParquetDataSource(fileSystem, path, start, length, fileSize);
+            dataSource = buildHdfsParquetDataSource(fileSystem, path, start, length, fileSize, stats);
             ParquetMetadata parquetMetadata = hdfsEnvironment.doAs(sessionUser, () -> ParquetFileReader.readFooter(configuration, path, NO_FILTER));
             List<BlockMetaData> blocks = parquetMetadata.getBlocks();
             FileMetaData fileMetaData = parquetMetadata.getFileMetaData();
@@ -773,7 +777,7 @@ public class ParquetHiveRecordCursor
         {
             if (builder == null) {
                 if (nullBuilder == null || (nullBuilder.getPositionCount() >= NULL_BUILDER_POSITIONS_THRESHOLD && nullBuilder.getSizeInBytes() >= NULL_BUILDER_SIZE_IN_BYTES_THRESHOLD)) {
-                    nullBuilder = rowType.createBlockBuilder(new BlockBuilderStatus(), NULL_BUILDER_POSITIONS_THRESHOLD);
+                    nullBuilder = rowType.createBlockBuilder(null, NULL_BUILDER_POSITIONS_THRESHOLD);
                 }
                 currentEntryBuilder = nullBuilder.beginBlockEntry();
             }
@@ -908,7 +912,7 @@ public class ParquetHiveRecordCursor
         {
             if (builder == null) {
                 if (nullBuilder == null || (nullBuilder.getPositionCount() >= NULL_BUILDER_POSITIONS_THRESHOLD && nullBuilder.getSizeInBytes() >= NULL_BUILDER_SIZE_IN_BYTES_THRESHOLD)) {
-                    nullBuilder = arrayType.createBlockBuilder(new BlockBuilderStatus(), NULL_BUILDER_POSITIONS_THRESHOLD);
+                    nullBuilder = arrayType.createBlockBuilder(null, NULL_BUILDER_POSITIONS_THRESHOLD);
                 }
                 currentEntryBuilder = nullBuilder.beginBlockEntry();
             }
@@ -1061,7 +1065,7 @@ public class ParquetHiveRecordCursor
         {
             if (builder == null) {
                 if (nullBuilder == null || (nullBuilder.getPositionCount() >= NULL_BUILDER_POSITIONS_THRESHOLD && nullBuilder.getSizeInBytes() >= NULL_BUILDER_SIZE_IN_BYTES_THRESHOLD)) {
-                    nullBuilder = mapType.createBlockBuilder(new BlockBuilderStatus(), NULL_BUILDER_POSITIONS_THRESHOLD);
+                    nullBuilder = mapType.createBlockBuilder(null, NULL_BUILDER_POSITIONS_THRESHOLD);
                 }
                 currentEntryBuilder = nullBuilder.beginBlockEntry();
             }

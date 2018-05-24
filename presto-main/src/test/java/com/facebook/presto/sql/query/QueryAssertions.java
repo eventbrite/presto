@@ -24,7 +24,9 @@ import java.io.Closeable;
 import java.util.List;
 
 import static com.facebook.presto.testing.TestingSession.testSessionBuilder;
+import static com.google.common.base.Strings.nullToEmpty;
 import static io.airlift.testing.Assertions.assertEqualsIgnoreOrder;
+import static java.lang.String.format;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.fail;
 
@@ -35,12 +37,28 @@ class QueryAssertions
 
     public QueryAssertions()
     {
-        Session defaultSession = testSessionBuilder()
+        this(testSessionBuilder()
                 .setCatalog("local")
                 .setSchema("default")
-                .build();
+                .build());
+    }
 
-        runner = new LocalQueryRunner(defaultSession);
+    public QueryAssertions(Session session)
+    {
+        runner = new LocalQueryRunner(session);
+    }
+
+    public void assertFails(@Language("SQL") String sql, @Language("RegExp") String expectedMessageRegExp)
+    {
+        try {
+            runner.execute(runner.getDefaultSession(), sql).toTestTypes();
+            fail(format("Expected query to fail: %s", sql));
+        }
+        catch (RuntimeException exception) {
+            if (!nullToEmpty(exception.getMessage()).matches(expectedMessageRegExp)) {
+                fail(format("Expected exception message '%s' to match '%s' for query: %s", exception.getMessage(), expectedMessageRegExp, sql), exception);
+            }
+        }
     }
 
     public void assertQuery(@Language("SQL") String actual, @Language("SQL") String expected)
@@ -52,7 +70,7 @@ class QueryAssertions
     {
         MaterializedResult actualResults = null;
         try {
-            actualResults = runner.execute(runner.getDefaultSession(), actual).toJdbcTypes();
+            actualResults = runner.execute(runner.getDefaultSession(), actual).toTestTypes();
         }
         catch (RuntimeException ex) {
             fail("Execution of 'actual' query failed: " + actual, ex);
@@ -60,11 +78,13 @@ class QueryAssertions
 
         MaterializedResult expectedResults = null;
         try {
-            expectedResults = runner.execute(runner.getDefaultSession(), expected).toJdbcTypes();
+            expectedResults = runner.execute(runner.getDefaultSession(), expected).toTestTypes();
         }
         catch (RuntimeException ex) {
             fail("Execution of 'expected' query failed: " + expected, ex);
         }
+
+        assertEquals(actualResults.getTypes(), expectedResults.getTypes(), "Types mismatch for query: \n " + actual + "\n:");
 
         List<MaterializedRow> actualRows = actualResults.getMaterializedRows();
         List<MaterializedRow> expectedRows = expectedResults.getMaterializedRows();

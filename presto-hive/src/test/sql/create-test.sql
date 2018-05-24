@@ -45,6 +45,14 @@ PARTITIONED BY (ds STRING)
 TBLPROPERTIES ('RETENTION'='-1')
 ;
 
+CREATE TABLE presto_test_not_readable (
+  t_string STRING
+)
+COMMENT 'Presto test data'
+PARTITIONED BY (ds STRING)
+TBLPROPERTIES ('RETENTION'='-1', 'object_not_readable'='reason for not readable')
+;
+
 CREATE TABLE presto_test_bucketed_by_string_int (
   t_string STRING,
   t_tinyint TINYINT,
@@ -112,6 +120,12 @@ CREATE TABLE presto_test_partition_schema_change_non_canonical (
 COMMENT 'Presto test non-canonical boolean partition table'
 PARTITIONED BY (t_boolean BOOLEAN)
 TBLPROPERTIES ('RETENTION'='-1')
+;
+
+CREATE TABLE presto_test_table_with_footer (
+  t_data STRING
+)
+TBLPROPERTIES ('skip.footer.line.count'='2')
 ;
 
 CREATE VIEW presto_test_view

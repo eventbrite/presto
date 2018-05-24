@@ -15,6 +15,7 @@ package com.facebook.presto.orc.writer;
 
 import com.facebook.presto.array.IntBigArray;
 import com.facebook.presto.orc.DictionaryCompressionOptimizer.DictionaryColumn;
+import com.facebook.presto.orc.OrcEncoding;
 import com.facebook.presto.orc.checkpoint.BooleanStreamCheckpoint;
 import com.facebook.presto.orc.checkpoint.LongStreamCheckpoint;
 import com.facebook.presto.orc.metadata.ColumnEncoding;
@@ -38,6 +39,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.airlift.slice.Slice;
 import io.airlift.slice.SliceOutput;
+import io.airlift.units.DataSize;
 import it.unimi.dsi.fastutil.ints.AbstractIntComparator;
 import it.unimi.dsi.fastutil.ints.IntArrays;
 import org.openjdk.jol.info.ClassLayout;
@@ -49,6 +51,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static com.facebook.presto.orc.DictionaryCompressionOptimizer.estimateIndexBytesPerValue;
+import static com.facebook.presto.orc.OrcEncoding.DWRF;
 import static com.facebook.presto.orc.metadata.ColumnEncoding.ColumnEncodingKind.DICTIONARY;
 import static com.facebook.presto.orc.metadata.ColumnEncoding.ColumnEncodingKind.DICTIONARY_V2;
 import static com.facebook.presto.orc.metadata.CompressionKind.NONE;
@@ -68,7 +71,8 @@ public class SliceDictionaryColumnWriter
     private final Type type;
     private final CompressionKind compression;
     private final int bufferSize;
-    private final boolean isDwrf;
+    private final OrcEncoding orcEncoding;
+    private final int stringStatisticsLimitInBytes;
 
     private final LongOutputStream dataStream;
     private final PresentOutputStream presentStream;
@@ -81,7 +85,7 @@ public class SliceDictionaryColumnWriter
 
     private IntBigArray values;
     private int valueCount;
-    private StringStatisticsBuilder statisticsBuilder = new StringStatisticsBuilder();
+    private StringStatisticsBuilder statisticsBuilder;
 
     private long rawBytes;
 
@@ -92,16 +96,17 @@ public class SliceDictionaryColumnWriter
     private boolean directEncoded;
     private SliceDirectColumnWriter directColumnWriter;
 
-    public SliceDictionaryColumnWriter(int column, Type type, CompressionKind compression, int bufferSize, boolean isDwrf)
+    public SliceDictionaryColumnWriter(int column, Type type, CompressionKind compression, int bufferSize, OrcEncoding orcEncoding, DataSize stringStatisticsLimit)
     {
         checkArgument(column >= 0, "column is negative");
         this.column = column;
         this.type = requireNonNull(type, "type is null");
         this.compression = requireNonNull(compression, "compression is null");
         this.bufferSize = bufferSize;
-        this.isDwrf = isDwrf;
+        this.orcEncoding = requireNonNull(orcEncoding, "orcEncoding is null");
+        this.stringStatisticsLimitInBytes = toIntExact(requireNonNull(stringStatisticsLimit, "stringStatisticsLimit is null").toBytes());
         LongOutputStream result;
-        if (isDwrf) {
+        if (orcEncoding == DWRF) {
             result = new LongOutputStreamV1(compression, bufferSize, false, DATA);
         }
         else {
@@ -110,8 +115,9 @@ public class SliceDictionaryColumnWriter
         this.dataStream = result;
         this.presentStream = new PresentOutputStream(compression, bufferSize);
         this.dictionaryDataStream = new ByteArrayOutputStream(compression, bufferSize, StreamKind.DICTIONARY_DATA);
-        this.dictionaryLengthStream = createLengthOutputStream(compression, bufferSize, isDwrf);
+        this.dictionaryLengthStream = createLengthOutputStream(compression, bufferSize, orcEncoding);
         values = new IntBigArray();
+        this.statisticsBuilder = newStringStatisticsBuilder();
     }
 
     @Override
@@ -147,12 +153,12 @@ public class SliceDictionaryColumnWriter
     }
 
     @Override
-    public void convertToDirect()
+    public long convertToDirect()
     {
         checkState(!closed);
         checkState(!directEncoded);
         if (directColumnWriter == null) {
-            directColumnWriter = new SliceDirectColumnWriter(column, type, compression, bufferSize, isDwrf, StringStatisticsBuilder::new);
+            directColumnWriter = new SliceDirectColumnWriter(column, type, compression, bufferSize, orcEncoding, this::newStringStatisticsBuilder);
         }
 
         Block dictionaryValues = dictionary.getElementBlock();
@@ -173,9 +179,11 @@ public class SliceDictionaryColumnWriter
         rowGroups.clear();
         rawBytes = 0;
         valueCount = 0;
-        statisticsBuilder = new StringStatisticsBuilder();
+        statisticsBuilder = newStringStatisticsBuilder();
 
         directEncoded = true;
+
+        return directColumnWriter.getBufferedBytes();
     }
 
     private void writeDictionaryRowGroup(Block dictionary, int valueCount, IntBigArray dictionaryIndexes)
@@ -253,7 +261,7 @@ public class SliceDictionaryColumnWriter
         ColumnStatistics statistics = statisticsBuilder.buildColumnStatistics();
         rowGroups.add(new DictionaryRowGroup(values, valueCount, statistics));
         valueCount = 0;
-        statisticsBuilder = new StringStatisticsBuilder();
+        statisticsBuilder = newStringStatisticsBuilder();
         values = new IntBigArray();
         return ImmutableMap.of(column, statistics);
     }
@@ -302,7 +310,7 @@ public class SliceDictionaryColumnWriter
                 dictionaryDataStream.writeSlice(value);
             }
         }
-        columnEncoding = new ColumnEncoding(isDwrf ? DICTIONARY : DICTIONARY_V2, dictionaryElements.getPositionCount() - 1);
+        columnEncoding = new ColumnEncoding(orcEncoding == DWRF ? DICTIONARY : DICTIONARY_V2, dictionaryElements.getPositionCount() - 1);
 
         // build index from original dictionary index to new sorted position
         int[] originalDictionaryToSortedIndex = new int[sortedDictionaryIndexes.length];
@@ -474,7 +482,7 @@ public class SliceDictionaryColumnWriter
         dictionaryLengthStream.reset();
         rowGroups.clear();
         valueCount = 0;
-        statisticsBuilder = new StringStatisticsBuilder();
+        statisticsBuilder = newStringStatisticsBuilder();
         columnEncoding = null;
         dictionary.clear();
         rawBytes = 0;
@@ -482,6 +490,11 @@ public class SliceDictionaryColumnWriter
             directEncoded = false;
             directColumnWriter.reset();
         }
+    }
+
+    private StringStatisticsBuilder newStringStatisticsBuilder()
+    {
+        return new StringStatisticsBuilder(stringStatisticsLimitInBytes);
     }
 
     private static class DictionaryRowGroup

@@ -39,6 +39,7 @@ import com.facebook.presto.sql.tree.CreateTableAsSelect;
 import com.facebook.presto.sql.tree.CreateView;
 import com.facebook.presto.sql.tree.Cube;
 import com.facebook.presto.sql.tree.CurrentTime;
+import com.facebook.presto.sql.tree.CurrentUser;
 import com.facebook.presto.sql.tree.Deallocate;
 import com.facebook.presto.sql.tree.DecimalLiteral;
 import com.facebook.presto.sql.tree.Delete;
@@ -174,7 +175,7 @@ import static java.util.stream.Collectors.toList;
 class AstBuilder
         extends SqlBaseBaseVisitor<Node>
 {
-    private int parameterPosition = 0;
+    private int parameterPosition;
     private final ParsingOptions parsingOptions;
 
     AstBuilder(ParsingOptions parsingOptions)
@@ -723,6 +724,8 @@ class AstBuilder
                 Optional.ofNullable(context.qualifiedName())
                         .map(this::getQualifiedName),
                 getTextIfPresent(context.pattern)
+                        .map(AstBuilder::unquote),
+                getTextIfPresent(context.escape)
                         .map(AstBuilder::unquote));
     }
 
@@ -733,6 +736,8 @@ class AstBuilder
                 getLocation(context),
                 visitIfPresent(context.identifier(), Identifier.class),
                 getTextIfPresent(context.pattern)
+                        .map(AstBuilder::unquote),
+                getTextIfPresent(context.escape)
                         .map(AstBuilder::unquote));
     }
 
@@ -1216,6 +1221,12 @@ class AstBuilder
         }
 
         return new CurrentTime(getLocation(context), type);
+    }
+
+    @Override
+    public Node visitCurrentUser(SqlBaseParser.CurrentUserContext context)
+    {
+        return new CurrentUser(getLocation(context.CURRENT_USER()));
     }
 
     @Override

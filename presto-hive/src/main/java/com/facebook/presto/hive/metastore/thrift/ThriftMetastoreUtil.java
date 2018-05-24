@@ -38,6 +38,7 @@ import org.apache.hadoop.hive.metastore.api.DecimalColumnStatsData;
 import org.apache.hadoop.hive.metastore.api.DoubleColumnStatsData;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.LongColumnStatsData;
+import org.apache.hadoop.hive.metastore.api.Order;
 import org.apache.hadoop.hive.metastore.api.PrincipalPrivilegeSet;
 import org.apache.hadoop.hive.metastore.api.PrivilegeGrantInfo;
 import org.apache.hadoop.hive.metastore.api.SerDeInfo;
@@ -243,8 +244,8 @@ public final class ThriftMetastoreUtil
                     OptionalDouble.empty(),
                     OptionalLong.empty(),
                     OptionalLong.empty(),
-                    OptionalLong.of(longStatsData.getNumNulls()),
-                    OptionalLong.of(longStatsData.getNumDVs()));
+                    longStatsData.isSetNumNulls() ? OptionalLong.of(longStatsData.getNumNulls()) : OptionalLong.empty(),
+                    longStatsData.isSetNumDVs() ? OptionalLong.of(longStatsData.getNumDVs()) : OptionalLong.empty());
         }
         else if (columnStatistics.getStatsData().isSetDoubleStats()) {
             DoubleColumnStatsData doubleStatsData = columnStatistics.getStatsData().getDoubleStats();
@@ -255,8 +256,8 @@ public final class ThriftMetastoreUtil
                     OptionalDouble.empty(),
                     OptionalLong.empty(),
                     OptionalLong.empty(),
-                    OptionalLong.of(doubleStatsData.getNumNulls()),
-                    OptionalLong.of(doubleStatsData.getNumDVs()));
+                    doubleStatsData.isSetNumNulls() ? OptionalLong.of(doubleStatsData.getNumNulls()) : OptionalLong.empty(),
+                    doubleStatsData.isSetNumDVs() ? OptionalLong.of(doubleStatsData.getNumDVs()) : OptionalLong.empty());
         }
         else if (columnStatistics.getStatsData().isSetDecimalStats()) {
             DecimalColumnStatsData decimalStatsData = columnStatistics.getStatsData().getDecimalStats();
@@ -267,8 +268,8 @@ public final class ThriftMetastoreUtil
                     OptionalDouble.empty(),
                     OptionalLong.empty(),
                     OptionalLong.empty(),
-                    OptionalLong.of(decimalStatsData.getNumNulls()),
-                    OptionalLong.of(decimalStatsData.getNumDVs()));
+                    decimalStatsData.isSetNumNulls() ? OptionalLong.of(decimalStatsData.getNumNulls()) : OptionalLong.empty(),
+                    decimalStatsData.isSetNumDVs() ? OptionalLong.of(decimalStatsData.getNumDVs()) : OptionalLong.empty());
         }
         else if (columnStatistics.getStatsData().isSetBooleanStats()) {
             BooleanColumnStatsData booleanStatsData = columnStatistics.getStatsData().getBooleanStats();
@@ -277,10 +278,11 @@ public final class ThriftMetastoreUtil
                     Optional.empty(),
                     OptionalLong.empty(),
                     OptionalDouble.empty(),
-                    OptionalLong.of(booleanStatsData.getNumTrues()),
-                    OptionalLong.of(booleanStatsData.getNumFalses()),
-                    OptionalLong.of(booleanStatsData.getNumNulls()),
-                    OptionalLong.of((booleanStatsData.getNumFalses() > 0 ? 1 : 0) + (booleanStatsData.getNumTrues() > 0 ? 1 : 0)));
+                    booleanStatsData.isSetNumTrues() ? OptionalLong.of(booleanStatsData.getNumTrues()) : OptionalLong.empty(),
+                    booleanStatsData.isSetNumFalses() ? OptionalLong.of(booleanStatsData.getNumFalses()) : OptionalLong.empty(),
+                    booleanStatsData.isSetNumNulls() ? OptionalLong.of(booleanStatsData.getNumNulls()) : OptionalLong.empty(),
+                    booleanStatsData.isSetNumFalses() && booleanStatsData.isSetNumTrues() ?
+                            OptionalLong.of((booleanStatsData.getNumFalses() > 0 ? 1 : 0) + (booleanStatsData.getNumTrues() > 0 ? 1 : 0)) : OptionalLong.empty());
         }
         else if (columnStatistics.getStatsData().isSetDateStats()) {
             DateColumnStatsData dateStatsData = columnStatistics.getStatsData().getDateStats();
@@ -291,31 +293,31 @@ public final class ThriftMetastoreUtil
                     OptionalDouble.empty(),
                     OptionalLong.empty(),
                     OptionalLong.empty(),
-                    OptionalLong.of(dateStatsData.getNumNulls()),
-                    OptionalLong.of(dateStatsData.getNumDVs()));
+                    dateStatsData.isSetNumNulls() ? OptionalLong.of(dateStatsData.getNumNulls()) : OptionalLong.empty(),
+                    dateStatsData.isSetNumDVs() ? OptionalLong.of(dateStatsData.getNumDVs()) : OptionalLong.empty());
         }
         else if (columnStatistics.getStatsData().isSetStringStats()) {
             StringColumnStatsData stringStatsData = columnStatistics.getStatsData().getStringStats();
             return new HiveColumnStatistics<>(
                     Optional.empty(),
                     Optional.empty(),
-                    OptionalLong.of(stringStatsData.getMaxColLen()),
-                    OptionalDouble.of(stringStatsData.getAvgColLen()),
+                    stringStatsData.isSetMaxColLen() ? OptionalLong.of(stringStatsData.getMaxColLen()) : OptionalLong.empty(),
+                    stringStatsData.isSetAvgColLen() ? OptionalDouble.of(stringStatsData.getAvgColLen()) : OptionalDouble.empty(),
                     OptionalLong.empty(),
                     OptionalLong.empty(),
-                    OptionalLong.of(stringStatsData.getNumNulls()),
-                    OptionalLong.of(stringStatsData.getNumDVs()));
+                    stringStatsData.isSetNumNulls() ? OptionalLong.of(stringStatsData.getNumNulls()) : OptionalLong.empty(),
+                    stringStatsData.isSetNumDVs() ? OptionalLong.of(stringStatsData.getNumDVs()) : OptionalLong.empty());
         }
         else if (columnStatistics.getStatsData().isSetBinaryStats()) {
             BinaryColumnStatsData binaryStatsData = columnStatistics.getStatsData().getBinaryStats();
             return new HiveColumnStatistics<>(
                     Optional.empty(),
                     Optional.empty(),
-                    OptionalLong.of(binaryStatsData.getMaxColLen()),
-                    OptionalDouble.of(binaryStatsData.getAvgColLen()),
+                    binaryStatsData.isSetMaxColLen() ? OptionalLong.of(binaryStatsData.getMaxColLen()) : OptionalLong.empty(),
+                    binaryStatsData.isSetAvgColLen() ? OptionalDouble.of(binaryStatsData.getAvgColLen()) : OptionalDouble.empty(),
                     OptionalLong.empty(),
                     OptionalLong.empty(),
-                    OptionalLong.of(binaryStatsData.getNumNulls()),
+                    binaryStatsData.isSetNumNulls() ? OptionalLong.of(binaryStatsData.getNumNulls()) : OptionalLong.empty(),
                     OptionalLong.empty());
         }
         else {
@@ -371,15 +373,14 @@ public final class ThriftMetastoreUtil
         builder.setStorageFormat(StorageFormat.createNullable(serdeInfo.getSerializationLib(), storageDescriptor.getInputFormat(), storageDescriptor.getOutputFormat()))
                 .setLocation(nullToEmpty(storageDescriptor.getLocation()))
                 .setBucketProperty(HiveBucketProperty.fromStorageDescriptor(storageDescriptor, tablePartitionName))
-                .setSorted(storageDescriptor.isSetSortCols() && !storageDescriptor.getSortCols().isEmpty())
                 .setSkewed(storageDescriptor.isSetSkewedInfo() && storageDescriptor.getSkewedInfo().isSetSkewedColNames() && !storageDescriptor.getSkewedInfo().getSkewedColNames().isEmpty())
                 .setSerdeParameters(serdeInfo.getParameters() == null ? ImmutableMap.of() : serdeInfo.getParameters());
     }
 
     private static StorageDescriptor makeStorageDescriptor(String tableName, List<Column> columns, Storage storage)
     {
-        if (storage.isSorted() || storage.isSkewed()) {
-            throw new IllegalArgumentException("Writing to sorted and/or skewed table/partition is not supported");
+        if (storage.isSkewed()) {
+            throw new IllegalArgumentException("Writing to skewed table/partition is not supported");
         }
         SerDeInfo serdeInfo = new SerDeInfo();
         serdeInfo.setName(tableName);
@@ -400,6 +401,11 @@ public final class ThriftMetastoreUtil
         if (bucketProperty.isPresent()) {
             sd.setNumBuckets(bucketProperty.get().getBucketCount());
             sd.setBucketCols(bucketProperty.get().getBucketedBy());
+            if (!bucketProperty.get().getSortedBy().isEmpty()) {
+                sd.setSortCols(bucketProperty.get().getSortedBy().stream()
+                        .map(column -> new Order(column.getColumnName(), column.getOrder().getHiveOrder()))
+                        .collect(toList()));
+            }
         }
 
         return sd;

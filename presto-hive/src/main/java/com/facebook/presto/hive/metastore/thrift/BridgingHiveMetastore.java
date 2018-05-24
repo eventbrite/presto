@@ -15,10 +15,10 @@ package com.facebook.presto.hive.metastore.thrift;
 
 import com.facebook.presto.hive.HiveType;
 import com.facebook.presto.hive.HiveUtil;
+import com.facebook.presto.hive.PartitionNotFoundException;
 import com.facebook.presto.hive.metastore.Database;
 import com.facebook.presto.hive.metastore.ExtendedHiveMetastore;
 import com.facebook.presto.hive.metastore.HiveColumnStatistics;
-import com.facebook.presto.hive.metastore.HiveMetastore;
 import com.facebook.presto.hive.metastore.HivePrivilegeInfo;
 import com.facebook.presto.hive.metastore.Partition;
 import com.facebook.presto.hive.metastore.PrincipalPrivileges;
@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.hive.metastore.MetastoreUtil.verifyCanDropColumn;
@@ -175,6 +176,19 @@ public class BridgingHiveMetastore
     }
 
     @Override
+    public synchronized void updateTableParameters(String databaseName, String tableName, Function<Map<String, String>, Map<String, String>> update)
+    {
+        org.apache.hadoop.hive.metastore.api.Table table = delegate.getTable(databaseName, tableName)
+                .orElseThrow(() -> new TableNotFoundException(new SchemaTableName(databaseName, tableName)));
+        Map<String, String> parameters = table.getParameters();
+        Map<String, String> updatedParameters = requireNonNull(update.apply(parameters), "updatedParameters is null");
+        if (!parameters.equals(updatedParameters)) {
+            table.setParameters(updatedParameters);
+            alterTable(databaseName, tableName, table);
+        }
+    }
+
+    @Override
     public void addColumn(String databaseName, String tableName, String columnName, HiveType columnType, String columnComment)
     {
         Optional<org.apache.hadoop.hive.metastore.api.Table> source = delegate.getTable(databaseName, tableName);
@@ -214,11 +228,7 @@ public class BridgingHiveMetastore
         verifyCanDropColumn(this, databaseName, tableName, columnName);
         org.apache.hadoop.hive.metastore.api.Table table = delegate.getTable(databaseName, tableName)
                 .orElseThrow(() -> new TableNotFoundException(new SchemaTableName(databaseName, tableName)));
-        for (FieldSchema fieldSchema : table.getSd().getCols()) {
-            if (fieldSchema.getName().equals(columnName)) {
-                table.getSd().getCols().remove(fieldSchema);
-            }
-        }
+        table.getSd().getCols().removeIf(fieldSchema -> fieldSchema.getName().equals(columnName));
         alterTable(databaseName, tableName, table);
     }
 
@@ -286,6 +296,19 @@ public class BridgingHiveMetastore
     public void alterPartition(String databaseName, String tableName, Partition partition)
     {
         delegate.alterPartition(databaseName, tableName, toMetastoreApiPartition(partition));
+    }
+
+    @Override
+    public synchronized void updatePartitionParameters(String databaseName, String tableName, List<String> partitionValues, Function<Map<String, String>, Map<String, String>> update)
+    {
+        org.apache.hadoop.hive.metastore.api.Partition partition = delegate.getPartition(databaseName, tableName, partitionValues)
+                .orElseThrow(() -> new PartitionNotFoundException(new SchemaTableName(databaseName, tableName), partitionValues));
+        Map<String, String> parameters = partition.getParameters();
+        Map<String, String> updatedParameters = requireNonNull(update.apply(parameters), "updatedParameters is null");
+        if (!parameters.equals(updatedParameters)) {
+            partition.setParameters(updatedParameters);
+            delegate.alterPartition(databaseName, tableName, partition);
+        }
     }
 
     @Override

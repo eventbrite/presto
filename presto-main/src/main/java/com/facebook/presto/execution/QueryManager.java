@@ -14,6 +14,7 @@
 package com.facebook.presto.execution;
 
 import com.facebook.presto.execution.QueryExecution.QueryOutputInfo;
+import com.facebook.presto.execution.StateMachine.StateChangeListener;
 import com.facebook.presto.server.SessionContext;
 import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.resourceGroups.ResourceGroupId;
@@ -30,6 +31,8 @@ public interface QueryManager
 
     void addOutputInfoListener(QueryId queryId, Consumer<QueryOutputInfo> listener);
 
+    void addStateChangeListener(QueryId queryId, StateChangeListener<QueryState> listener);
+
     ListenableFuture<QueryState> getStateChange(QueryId queryId, QueryState currentState);
 
     QueryInfo getQueryInfo(QueryId queryId);
@@ -43,6 +46,8 @@ public interface QueryManager
     void recordHeartbeat(QueryId queryId);
 
     QueryInfo createQuery(SessionContext sessionContext, String query);
+
+    void failQuery(QueryId queryId, Throwable cause);
 
     void cancelQuery(QueryId queryId);
 

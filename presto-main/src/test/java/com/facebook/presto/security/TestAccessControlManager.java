@@ -29,6 +29,7 @@ import com.facebook.presto.spi.connector.Connector;
 import com.facebook.presto.spi.connector.ConnectorAccessControl;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
 import com.facebook.presto.spi.security.AccessDeniedException;
+import com.facebook.presto.spi.security.BasicPrincipal;
 import com.facebook.presto.spi.security.Identity;
 import com.facebook.presto.spi.security.Privilege;
 import com.facebook.presto.spi.security.SystemAccessControl;
@@ -47,6 +48,7 @@ import java.util.Set;
 
 import static com.facebook.presto.connector.ConnectorId.createInformationSchemaConnectorId;
 import static com.facebook.presto.connector.ConnectorId.createSystemTablesConnectorId;
+import static com.facebook.presto.spi.security.AccessDeniedException.denySelectColumns;
 import static com.facebook.presto.spi.security.AccessDeniedException.denySelectTable;
 import static com.facebook.presto.transaction.TransactionBuilder.transaction;
 import static com.facebook.presto.transaction.TransactionManager.createTestTransactionManager;
@@ -56,12 +58,11 @@ import static org.testng.Assert.fail;
 
 public class TestAccessControlManager
 {
-    private static final Principal PRINCIPAL = new TestingPrincipal("principal");
+    private static final Principal PRINCIPAL = new BasicPrincipal("principal");
     private static final String USER_NAME = "user_name";
 
     @Test(expectedExceptions = PrestoException.class, expectedExceptionsMessageRegExp = "Presto server is still initializing")
     public void testInitializing()
-            throws Exception
     {
         AccessControlManager accessControlManager = new AccessControlManager(createTestTransactionManager());
         accessControlManager.checkCanSetUser(null, "foo");
@@ -69,7 +70,6 @@ public class TestAccessControlManager
 
     @Test
     public void testNoneSystemAccessControl()
-            throws Exception
     {
         AccessControlManager accessControlManager = new AccessControlManager(createTestTransactionManager());
         accessControlManager.setSystemAccessControl(AllowAllSystemAccessControl.NAME, ImmutableMap.of());
@@ -78,7 +78,6 @@ public class TestAccessControlManager
 
     @Test
     public void testReadOnlySystemAccessControl()
-            throws Exception
     {
         Identity identity = new Identity(USER_NAME, Optional.of(PRINCIPAL));
         QualifiedObjectName tableName = new QualifiedObjectName("catalog", "schema", "table");
@@ -98,6 +97,7 @@ public class TestAccessControlManager
                     accessControlManager.checkCanCreateViewWithSelectFromView(transactionId, identity, tableName);
                     accessControlManager.checkCanShowSchemas(transactionId, identity, "catalog");
                     accessControlManager.checkCanShowTablesMetadata(transactionId, identity, new CatalogSchemaName("catalog", "schema"));
+                    accessControlManager.checkCanSelectFromColumns(transactionId, identity, tableName, ImmutableSet.of("column"));
                     Set<String> catalogs = ImmutableSet.of("catalog");
                     assertEquals(accessControlManager.filterCatalogs(identity, catalogs), catalogs);
                     Set<String> schemas = ImmutableSet.of("schema");
@@ -119,7 +119,6 @@ public class TestAccessControlManager
 
     @Test
     public void testSetAccessControl()
-            throws Exception
     {
         AccessControlManager accessControlManager = new AccessControlManager(createTestTransactionManager());
 
@@ -134,7 +133,6 @@ public class TestAccessControlManager
 
     @Test
     public void testNoCatalogAccessControl()
-            throws Exception
     {
         TransactionManager transactionManager = createTestTransactionManager();
         AccessControlManager accessControlManager = new AccessControlManager(transactionManager);
@@ -151,7 +149,6 @@ public class TestAccessControlManager
 
     @Test(expectedExceptions = PrestoException.class, expectedExceptionsMessageRegExp = "Access Denied: Cannot select from table schema.table")
     public void testDenyCatalogAccessControl()
-            throws Exception
     {
         CatalogManager catalogManager = new CatalogManager();
         TransactionManager transactionManager = createTestTransactionManager(catalogManager);
@@ -172,7 +169,6 @@ public class TestAccessControlManager
 
     @Test(expectedExceptions = PrestoException.class, expectedExceptionsMessageRegExp = "Access Denied: Cannot select from table secured_catalog.schema.table")
     public void testDenySystemAccessControl()
-            throws Exception
     {
         CatalogManager catalogManager = new CatalogManager();
         TransactionManager transactionManager = createTestTransactionManager(catalogManager);
@@ -301,6 +297,12 @@ public class TestAccessControlManager
         }
 
         @Override
+        public void checkCanSelectFromColumns(ConnectorTransactionHandle transactionHandle, Identity identity, SchemaTableName tableName, Set<String> columnNames)
+        {
+            denySelectColumns(tableName.toString(), columnNames);
+        }
+
+        @Override
         public void checkCanCreateSchema(ConnectorTransactionHandle transactionHandle, Identity identity, String schemaName)
         {
             throw new UnsupportedOperationException();
@@ -392,6 +394,12 @@ public class TestAccessControlManager
 
         @Override
         public void checkCanCreateViewWithSelectFromView(ConnectorTransactionHandle transactionHandle, Identity identity, SchemaTableName viewName)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void checkCanCreateViewWithSelectFromColumns(ConnectorTransactionHandle transactionHandle, Identity identity, SchemaTableName tableName, Set<String> columnNames)
         {
             throw new UnsupportedOperationException();
         }

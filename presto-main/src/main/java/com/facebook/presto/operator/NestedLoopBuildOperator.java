@@ -13,11 +13,9 @@
  */
 package com.facebook.presto.operator;
 
+import com.facebook.presto.memory.context.LocalMemoryContext;
 import com.facebook.presto.spi.Page;
-import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.planner.plan.PlanNodeId;
-
-import java.util.List;
 
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
@@ -34,23 +32,17 @@ public class NestedLoopBuildOperator
 
         private boolean closed;
 
-        public NestedLoopBuildOperatorFactory(int operatorId, PlanNodeId planNodeId, List<Type> types)
+        public NestedLoopBuildOperatorFactory(int operatorId, PlanNodeId planNodeId)
         {
             this.operatorId = operatorId;
             this.planNodeId = requireNonNull(planNodeId, "planNodeId is null");
-            nestedLoopJoinPagesSupplier = new NestedLoopJoinPagesSupplier(requireNonNull(types, "types is null"));
+            nestedLoopJoinPagesSupplier = new NestedLoopJoinPagesSupplier();
             nestedLoopJoinPagesSupplier.retain();
         }
 
         public NestedLoopJoinPagesSupplier getNestedLoopJoinPagesSupplier()
         {
             return nestedLoopJoinPagesSupplier;
-        }
-
-        @Override
-        public List<Type> getTypes()
-        {
-            return nestedLoopJoinPagesSupplier.getTypes();
         }
 
         @Override
@@ -74,13 +66,14 @@ public class NestedLoopBuildOperator
         @Override
         public OperatorFactory duplicate()
         {
-            return new NestedLoopBuildOperatorFactory(operatorId, planNodeId, getTypes());
+            return new NestedLoopBuildOperatorFactory(operatorId, planNodeId);
         }
     }
 
     private final OperatorContext operatorContext;
     private final NestedLoopJoinPagesSupplier nestedLoopJoinPagesSupplier;
     private final NestedLoopJoinPagesBuilder nestedLoopJoinPagesBuilder;
+    private final LocalMemoryContext localUserMemoryContext;
     private boolean finished;
 
     public NestedLoopBuildOperator(OperatorContext operatorContext, NestedLoopJoinPagesSupplier nestedLoopJoinPagesSupplier)
@@ -88,18 +81,13 @@ public class NestedLoopBuildOperator
         this.operatorContext = requireNonNull(operatorContext, "operatorContext is null");
         this.nestedLoopJoinPagesSupplier = requireNonNull(nestedLoopJoinPagesSupplier, "nestedLoopJoinPagesSupplier is null");
         this.nestedLoopJoinPagesBuilder = new NestedLoopJoinPagesBuilder(operatorContext);
+        this.localUserMemoryContext = operatorContext.localUserMemoryContext();
     }
 
     @Override
     public OperatorContext getOperatorContext()
     {
         return operatorContext;
-    }
-
-    @Override
-    public List<Type> getTypes()
-    {
-        return nestedLoopJoinPagesSupplier.getTypes();
     }
 
     @Override
@@ -138,10 +126,10 @@ public class NestedLoopBuildOperator
         }
 
         nestedLoopJoinPagesBuilder.addPage(page);
-        if (!operatorContext.trySetMemoryReservation(nestedLoopJoinPagesBuilder.getEstimatedSize().toBytes())) {
+        if (!localUserMemoryContext.trySetBytes(nestedLoopJoinPagesBuilder.getEstimatedSize().toBytes())) {
             nestedLoopJoinPagesBuilder.compact();
+            localUserMemoryContext.setBytes(nestedLoopJoinPagesBuilder.getEstimatedSize().toBytes());
         }
-        operatorContext.setMemoryReservation(nestedLoopJoinPagesBuilder.getEstimatedSize().toBytes());
         operatorContext.recordGeneratedOutput(page.getSizeInBytes(), page.getPositionCount());
     }
 

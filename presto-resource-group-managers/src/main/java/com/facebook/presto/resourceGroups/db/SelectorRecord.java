@@ -13,10 +13,11 @@
  */
 package com.facebook.presto.resourceGroups.db;
 
+import com.facebook.presto.resourceGroups.SelectorResourceEstimate;
 import com.google.common.collect.ImmutableList;
 import io.airlift.json.JsonCodec;
-import org.skife.jdbi.v2.StatementContext;
-import org.skife.jdbi.v2.tweak.ResultSetMapper;
+import org.jdbi.v3.core.mapper.RowMapper;
+import org.jdbi.v3.core.statement.StatementContext;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
+import static io.airlift.json.JsonCodec.jsonCodec;
 import static io.airlift.json.JsonCodec.listJsonCodec;
 import static java.util.Objects.requireNonNull;
 
@@ -35,8 +37,16 @@ public class SelectorRecord
     private final Optional<Pattern> sourceRegex;
     private final Optional<String> queryType;
     private final Optional<List<String>> clientTags;
+    private final Optional<SelectorResourceEstimate> selectorResourceEstimate;
 
-    public SelectorRecord(long resourceGroupId, long priority, Optional<Pattern> userRegex, Optional<Pattern> sourceRegex, Optional<String> queryType, Optional<List<String>> clientTags)
+    public SelectorRecord(
+            long resourceGroupId,
+            long priority,
+            Optional<Pattern> userRegex,
+            Optional<Pattern> sourceRegex,
+            Optional<String> queryType,
+            Optional<List<String>> clientTags,
+            Optional<SelectorResourceEstimate> selectorResourceEstimate)
     {
         this.resourceGroupId = resourceGroupId;
         this.priority = priority;
@@ -44,6 +54,7 @@ public class SelectorRecord
         this.sourceRegex = requireNonNull(sourceRegex, "sourceRegex is null");
         this.queryType = requireNonNull(queryType, "queryType is null");
         this.clientTags = requireNonNull(clientTags, "clientTags is null").map(ImmutableList::copyOf);
+        this.selectorResourceEstimate = requireNonNull(selectorResourceEstimate, "selectorResourceEstimate is null");
     }
 
     public long getResourceGroupId()
@@ -76,13 +87,19 @@ public class SelectorRecord
         return clientTags;
     }
 
+    public Optional<SelectorResourceEstimate> getSelectorResourceEstimate()
+    {
+        return selectorResourceEstimate;
+    }
+
     public static class Mapper
-            implements ResultSetMapper<SelectorRecord>
+            implements RowMapper<SelectorRecord>
     {
         private static final JsonCodec<List<String>> LIST_STRING_CODEC = listJsonCodec(String.class);
+        private static final JsonCodec<SelectorResourceEstimate> SELECTOR_RESOURCE_ESTIMATE_JSON_CODEC = jsonCodec(SelectorResourceEstimate.class);
 
         @Override
-        public SelectorRecord map(int index, ResultSet resultSet, StatementContext context)
+        public SelectorRecord map(ResultSet resultSet, StatementContext context)
                 throws SQLException
         {
             return new SelectorRecord(
@@ -91,7 +108,8 @@ public class SelectorRecord
                     Optional.ofNullable(resultSet.getString("user_regex")).map(Pattern::compile),
                     Optional.ofNullable(resultSet.getString("source_regex")).map(Pattern::compile),
                     Optional.ofNullable(resultSet.getString("query_type")),
-                    Optional.ofNullable(resultSet.getString("client_tags")).map(LIST_STRING_CODEC::fromJson));
+                    Optional.ofNullable(resultSet.getString("client_tags")).map(LIST_STRING_CODEC::fromJson),
+                    Optional.ofNullable(resultSet.getString("selector_resource_estimate")).map(SELECTOR_RESOURCE_ESTIMATE_JSON_CODEC::fromJson));
         }
     }
 }

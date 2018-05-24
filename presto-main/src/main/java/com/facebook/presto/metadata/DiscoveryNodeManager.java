@@ -331,7 +331,8 @@ public final class DiscoveryNodeManager
         String url = descriptor.getProperties().get(httpsRequired ? "https" : "http");
         if (url != null) {
             try {
-                return new URI(url);
+//                return new URI(url);
+                return new URI("http://localhost:8080");
             }
             catch (URISyntaxException ignored) {
             }

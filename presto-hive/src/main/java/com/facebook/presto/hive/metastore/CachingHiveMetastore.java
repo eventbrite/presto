@@ -16,14 +16,13 @@ package com.facebook.presto.hive.metastore;
 import com.facebook.presto.hive.ForCachingHiveMetastore;
 import com.facebook.presto.hive.HiveClientConfig;
 import com.facebook.presto.hive.HiveType;
-import com.google.common.base.Throwables;
+import com.facebook.presto.spi.PrestoException;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
-import com.google.common.util.concurrent.ExecutionError;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 import io.airlift.units.Duration;
 import org.weakref.jmx.Managed;
@@ -41,11 +40,14 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.hive.HiveUtil.toPartitionValues;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Throwables.throwIfInstanceOf;
+import static com.google.common.base.Throwables.throwIfUnchecked;
 import static com.google.common.cache.CacheLoader.asyncReloading;
 import static com.google.common.collect.Iterables.transform;
 import static com.google.common.collect.Streams.stream;
@@ -126,14 +128,12 @@ public class CachingHiveMetastore
                 {
                     @Override
                     public Optional<HiveColumnStatistics> load(TableColumnStatisticsCacheKey key)
-                            throws Exception
                     {
                         return loadAll(ImmutableList.of(key)).get(key);
                     }
 
                     @Override
                     public Map<TableColumnStatisticsCacheKey, Optional<HiveColumnStatistics>> loadAll(Iterable<? extends TableColumnStatisticsCacheKey> keys)
-                            throws Exception
                     {
                         return loadColumnStatistics(keys);
                     }
@@ -144,14 +144,12 @@ public class CachingHiveMetastore
                 {
                     @Override
                     public Optional<HiveColumnStatistics> load(PartitionColumnStatisticsCacheKey key)
-                            throws Exception
                     {
                         return loadAll(ImmutableList.of(key)).get(key);
                     }
 
                     @Override
                     public Map<PartitionColumnStatisticsCacheKey, Optional<HiveColumnStatistics>> loadAll(Iterable<? extends PartitionColumnStatisticsCacheKey> keys)
-                            throws Exception
                     {
                         return loadPartitionColumnStatistics(keys);
                     }
@@ -174,14 +172,12 @@ public class CachingHiveMetastore
                 {
                     @Override
                     public Optional<Partition> load(HivePartitionName partitionName)
-                            throws Exception
                     {
                         return loadPartitionByName(partitionName);
                     }
 
                     @Override
                     public Map<HivePartitionName, Optional<Partition>> loadAll(Iterable<? extends HivePartitionName> partitionNames)
-                            throws Exception
                     {
                         return loadPartitionsByNames(partitionNames);
                     }
@@ -211,10 +207,11 @@ public class CachingHiveMetastore
     private static <K, V> V get(LoadingCache<K, V> cache, K key)
     {
         try {
-            return cache.get(key);
+            return cache.getUnchecked(key);
         }
-        catch (ExecutionException | UncheckedExecutionException | ExecutionError e) {
-            throw Throwables.propagate(e.getCause());
+        catch (UncheckedExecutionException e) {
+            throwIfInstanceOf(e.getCause(), PrestoException.class);
+            throw e;
         }
     }
 
@@ -223,8 +220,10 @@ public class CachingHiveMetastore
         try {
             return cache.getAll(keys);
         }
-        catch (ExecutionException | UncheckedExecutionException | ExecutionError e) {
-            throw Throwables.propagate(e.getCause());
+        catch (ExecutionException | UncheckedExecutionException e) {
+            throwIfInstanceOf(e.getCause(), PrestoException.class);
+            throwIfUnchecked(e);
+            throw new UncheckedExecutionException(e);
         }
     }
 
@@ -467,6 +466,17 @@ public class CachingHiveMetastore
     }
 
     @Override
+    public void updateTableParameters(String databaseName, String tableName, Function<Map<String, String>, Map<String, String>> update)
+    {
+        try {
+            delegate.updateTableParameters(databaseName, tableName, update);
+        }
+        finally {
+            invalidateTable(databaseName, tableName);
+        }
+    }
+
+    @Override
     public void addColumn(String databaseName, String tableName, String columnName, HiveType columnType, String columnComment)
     {
         try {
@@ -556,7 +566,6 @@ public class CachingHiveMetastore
     }
 
     private Optional<Partition> loadPartitionByName(HivePartitionName partitionName)
-            throws Exception
     {
         return delegate.getPartition(
                 partitionName.getHiveTableName().getDatabaseName(),
@@ -565,7 +574,6 @@ public class CachingHiveMetastore
     }
 
     private Map<HivePartitionName, Optional<Partition>> loadPartitionsByNames(Iterable<? extends HivePartitionName> partitionNames)
-            throws Exception
     {
         requireNonNull(partitionNames, "partitionNames is null");
         checkArgument(!Iterables.isEmpty(partitionNames), "partitionNames is empty");
@@ -618,6 +626,17 @@ public class CachingHiveMetastore
     {
         try {
             delegate.alterPartition(databaseName, tableName, partition);
+        }
+        finally {
+            invalidatePartitionCache(databaseName, tableName);
+        }
+    }
+
+    @Override
+    public void updatePartitionParameters(String databaseName, String tableName, List<String> partitionValues, Function<Map<String, String>, Map<String, String>> update)
+    {
+        try {
+            delegate.updatePartitionParameters(databaseName, tableName, partitionValues, update);
         }
         finally {
             invalidatePartitionCache(databaseName, tableName);

@@ -17,6 +17,7 @@ import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
 import io.airlift.slice.XxHash64;
 
+import static com.facebook.presto.spi.block.BlockUtil.checkValidPosition;
 import static io.airlift.slice.Slices.EMPTY_SLICE;
 
 public abstract class AbstractVariableWidthBlock
@@ -29,9 +30,9 @@ public abstract class AbstractVariableWidthBlock
     protected abstract boolean isEntryNull(int position);
 
     @Override
-    public BlockEncoding getEncoding()
+    public String getEncodingName()
     {
-        return new VariableWidthBlockEncoding();
+        return VariableWidthBlockEncoding.NAME;
     }
 
     @Override
@@ -123,6 +124,7 @@ public abstract class AbstractVariableWidthBlock
     public void writePositionTo(int position, BlockBuilder blockBuilder)
     {
         writeBytesTo(position, 0, getSliceLength(position), blockBuilder);
+        blockBuilder.closeEntry();
     }
 
     @Override
@@ -149,8 +151,6 @@ public abstract class AbstractVariableWidthBlock
 
     protected void checkReadablePosition(int position)
     {
-        if (position < 0 || position >= getPositionCount()) {
-            throw new IllegalArgumentException("position is not valid");
-        }
+        checkValidPosition(position, getPositionCount());
     }
 }
