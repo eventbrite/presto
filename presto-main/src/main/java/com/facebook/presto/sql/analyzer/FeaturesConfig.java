@@ -38,6 +38,7 @@ import java.util.List;
 import static com.facebook.presto.sql.analyzer.RegexLibrary.JONI;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.airlift.units.DataSize.Unit.KILOBYTE;
+import static io.airlift.units.DataSize.succinctBytes;
 import static java.util.concurrent.TimeUnit.MINUTES;
 
 @DefunctConfig({
@@ -61,6 +62,7 @@ public class FeaturesConfig
     private boolean distributedJoinsEnabled = true;
     private boolean colocatedJoinsEnabled;
     private boolean groupedExecutionForAggregationEnabled;
+    private int concurrentLifespansPerTask;
     private boolean spatialJoinsEnabled = true;
     private boolean fastInequalityJoins = true;
     private boolean reorderJoins = true;
@@ -74,7 +76,6 @@ public class FeaturesConfig
     private boolean exchangeCompressionEnabled;
     private boolean legacyArrayAgg;
     private boolean legacyLogFunction;
-    private boolean legacyOrderBy;
     private boolean groupByUsesEqualTo;
     private boolean legacyTimestamp = true;
     private boolean legacyMapSubscript;
@@ -105,6 +106,7 @@ public class FeaturesConfig
     private boolean parseDecimalLiteralsAsDouble;
     private boolean useMarkDistinct = true;
     private boolean preferPartialAggregation = true;
+    private DataSize preAllocateMemoryThreshold = succinctBytes(0);
 
     private Duration iterativeOptimizerTimeout = new Duration(3, MINUTES); // by default let optimizer wait a long time in case it retrieves some data from ConnectorMetadata
 
@@ -278,6 +280,21 @@ public class FeaturesConfig
     public FeaturesConfig setGroupedExecutionForAggregationEnabled(boolean groupedExecutionForAggregationEnabled)
     {
         this.groupedExecutionForAggregationEnabled = groupedExecutionForAggregationEnabled;
+        return this;
+    }
+
+    public int getConcurrentLifespansPerTask()
+    {
+        return concurrentLifespansPerTask;
+    }
+
+    @Config("concurrent-lifespans-per-task")
+    @Min(0)
+    @ConfigDescription("Experimental: Default number of lifespans that run in parallel on each task when grouped execution is enabled")
+    // When set to zero, a limit is not imposed on the number of lifespans that run in parallel
+    public FeaturesConfig setConcurrentLifespansPerTask(int concurrentLifespansPerTask)
+    {
+        this.concurrentLifespansPerTask = concurrentLifespansPerTask;
         return this;
     }
 
@@ -746,6 +763,19 @@ public class FeaturesConfig
     public FeaturesConfig setArrayAggGroupImplementation(ArrayAggGroupImplementation groupByMode)
     {
         this.arrayAggGroupImplementation = groupByMode;
+        return this;
+    }
+
+    @NotNull
+    public DataSize getPreAllocateMemoryThreshold()
+    {
+        return preAllocateMemoryThreshold;
+    }
+
+    @Config("experimental.preallocate-memory-threshold")
+    public FeaturesConfig setPreAllocateMemoryThreshold(DataSize preAllocateMemoryThreshold)
+    {
+        this.preAllocateMemoryThreshold = preAllocateMemoryThreshold;
         return this;
     }
 

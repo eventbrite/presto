@@ -47,10 +47,10 @@ import io.airlift.slice.Slices;
 import io.airlift.units.Duration;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
-import org.testng.annotations.AfterSuite;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.BeforeSuite;
 import org.testng.annotations.Test;
 
 import java.lang.reflect.Method;
@@ -154,7 +154,7 @@ public class TestExpressionCompiler
     private FunctionAssertions functionAssertions;
     private List<ListenableFuture<?>> futures;
 
-    @BeforeSuite
+    @BeforeClass
     public void setupClass()
     {
         Logging.initialize();
@@ -167,7 +167,7 @@ public class TestExpressionCompiler
         functionAssertions = new FunctionAssertions();
     }
 
-    @AfterSuite
+    @AfterClass(alwaysRun = true)
     public void tearDownClass()
     {
         if (executor != null) {
@@ -775,7 +775,9 @@ public class TestExpressionCompiler
 
         for (Double value : doubleLefts) {
             assertExecute(generateExpression("cast(%s as boolean)", value), BOOLEAN, value == null ? null : (value != 0.0 ? true : false));
-            assertExecute(generateExpression("cast(%s as bigint)", value), BIGINT, value == null ? null : value.longValue());
+            if (value == null || (value >= Long.MIN_VALUE && value < Long.MAX_VALUE)) {
+                assertExecute(generateExpression("cast(%s as bigint)", value), BIGINT, value == null ? null : value.longValue());
+            }
             assertExecute(generateExpression("cast(%s as double)", value), DOUBLE, value == null ? null : value);
             assertExecute(generateExpression("cast(%s as varchar)", value), VARCHAR, value == null ? null : String.valueOf(value));
         }
